@@ -1,22 +1,31 @@
 package keygen
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/sha512"
+	"crypto/hmac"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"math/big"
 
 	"filippo.io/bigmod"
-	"golang.org/x/crypto/hkdf"
 )
 
-// ECDSA generates an ECDSA key deterministically from a random secret using a
-// procedure equivalent to that in FIPS 186-5, Appendix A.2.2.
+// ECDSA generates an ECDSA key deterministically from a random secret.
 //
-// The secret should be uniform, must be at least 128 bits long (ideally, 256
-// bits long), and should not be reused for other purposes.
+// The secret must be at least 128 bits long and should be at least 192 bits
+// long for multi-user security. The secret should not be reused.
+//
+// This function instantiates HMAC_DRBG with SHA-256 according to NIST SP
+// 800-90A Rev. 1, and uses it for a procedure equivalent to that in FIPS 186-5,
+// Appendix A.2.2. For FIPS 186-5 compliance, the secret must contain at least
+// 192, 288, and 384 bits of entropy for P-256, P-384, and P-521, respectively.
+// (3/2 of the required security strength, per SP 800-90A Rev. 1, Section 8.6.7
+// and SP 800-57 Part 1 Rev. 5, Section 5.6.1.1.) SHA-256 is appropriate for all
+// three curves, as per SP 800-90Ar1, Section 10.1 and SP 800-57 Part 1 Rev. 5,
+// Section 5.6.1.2.
 //
 // The output MAY CHANGE until this package reaches v1.0.0.
 func ECDSA(c elliptic.Curve, secret []byte) (*ecdsa.PrivateKey, error) {
@@ -24,54 +33,164 @@ func ECDSA(c elliptic.Curve, secret []byte) (*ecdsa.PrivateKey, error) {
 		return nil, fmt.Errorf("input secret must be at least 128 bits")
 	}
 
-	var salt string
+	var personalization string
 	switch c {
 	case elliptic.P256():
-		salt = "ECDSA key generation: NIST P-256"
+		personalization = "det ECDSA key gen P-256"
 	case elliptic.P384():
-		salt = "ECDSA key generation: NIST P-384"
+		personalization = "det ECDSA key gen P-384"
 	case elliptic.P521():
-		salt = "ECDSA key generation: NIST P-521"
+		personalization = "det ECDSA key gen P-521"
 	default:
 		return nil, fmt.Errorf("unsupported curve %s", c.Params().Name)
 	}
 
-	prk := hkdf.Extract(sha512.New, secret, []byte(salt))
-	r := hkdf.Expand(sha512.New, prk, nil)
+	drbg := hmacDRBG(secret, []byte(personalization))
 
 	N := bigmod.NewModulusFromBig(c.Params().N)
-
 	b := make([]byte, N.Size())
-	if _, err := io.ReadFull(r, b); err != nil {
-		return nil, fmt.Errorf("HKDF error %v", err)
+	if err := drbg(b); err != nil {
+		return nil, fmt.Errorf("internal error: HMAC_DRBG error: %v", err)
 	}
 
-	// Since P-521's order bitsize is not a multiple of 8, mask off the excess
-	// bits to increase the chance of hitting a value in (0, N).
-	if c == elliptic.P521() {
-		b[0] &= 0b0000_0001
+	// Right shift the bytes buffer to match the bit length of N. It would be
+	// safer and easier to mask off the extra bits on the left, but this is more
+	// strictly compliant with FIPS 186-5 (which reads the first N bits from the
+	// DRBG) and matches what RFC 6979's bits2int does.
+	if excess := len(b)*8 - N.BitLen(); excess != 0 {
+		// Just to be safe, assert that this only happens for the one curve that
+		// doesn't have a round number of bits, and for the expected number of
+		// excess bits.
+		if c != elliptic.P521() {
+			return nil, fmt.Errorf("internal error: unexpectedly masking off bits")
+		}
+		if excess != 7 {
+			return nil, fmt.Errorf("internal error: unexpected excess bits")
+		}
+		b = rightShift(b, excess)
 	}
 
-	// FIPS 186-4 checks k <= N - 2 and then adds one. Checking 0 < k <= N - 1
-	// is strictly equivalent but is more API-friendly, since SetBytes already
-	// checks for overflows and doesn't require an addition.
+	// FIPS 186-5, Appendix A.4.2, checks x <= N - 2 and then adds one. Checking
+	// 0 < x <= N - 1 is strictly equivalent but is more API-friendly, since
+	// SetBytes already checks for overflows and doesn't require an addition.
 	// (None of this matters anyway because the chance of selecting zero is
-	// cryptographically negligible.)
-	k := bigmod.NewNat()
-	if _, err := k.SetBytes(b, N); err != nil || k.IsZero() == 1 {
-		return ECDSA(c, prk)
+	// cryptographically negligible.) Equivalent processes are explicitly
+	// allowed by FIPS 186-5, Appendix A.2.2, Process point 4.
+	x := bigmod.NewNat()
+	if _, err := x.SetBytes(b, N); err != nil || x.IsZero() == 1 {
+		// Only P-256 has a non-negligible chance of looping.
+		if c != elliptic.P256() {
+			return nil, fmt.Errorf("internal error: unexpected loop")
+		}
+		if testingOnlyRejectionSamplingLooped != nil {
+			testingOnlyRejectionSamplingLooped()
+		}
+
+		if err := drbg(b); err != nil {
+			return nil, fmt.Errorf("internal error: HMAC_DRBG error: %v", err)
+		}
+		if _, err := x.SetBytes(b, N); err != nil || x.IsZero() == 1 {
+			// The chance of looping twice is cryptographically negligible.
+			return nil, fmt.Errorf("internal error: looped twice")
+		}
 	}
 
 	priv := new(ecdsa.PrivateKey)
 	priv.PublicKey.Curve = c
-	priv.D = new(big.Int).SetBytes(k.Bytes(N))
-	priv.PublicKey.X, priv.PublicKey.Y = c.ScalarBaseMult(k.Bytes(N))
+	priv.D = new(big.Int).SetBytes(x.Bytes(N))
+	priv.PublicKey.X, priv.PublicKey.Y = c.ScalarBaseMult(x.Bytes(N))
 	return priv, nil
 }
 
-// ECDSALegacy generates an ECDSA key deterministically from a random stream
-// using the procedure given in FIPS 186-5, Appendix A.2.1, in a way compatible
-// with Go 1.19.
+// testingOnlyRejectionSamplingLooped is called when rejection sampling in
+// ECDSA rejects a candidate for being higher than the modulus.
+var testingOnlyRejectionSamplingLooped func()
+
+// hmacDRBG implements HMAC_DRBG instantiated with SHA-256.
+//
+// It returns a function instead of an io.Reader because the size of each
+// request influences the output, so two 32-byte requests are not equivalent to
+// one 64-byte request.
+func hmacDRBG(entropy, personalization []byte) func([]byte) error {
+	// V = 0x01 0x01 0x01 ... 0x01
+	V := make([]byte, sha256.Size)
+	for i := range V {
+		V[i] = 0x01
+	}
+
+	// K = 0x00 0x00 0x00 ... 0x00
+	K := make([]byte, sha256.Size)
+
+	// K = HMAC_K(V || 0x00 || entropy || personalization)
+	h := hmac.New(sha256.New, K)
+	h.Write(V)
+	h.Write([]byte{0x00})
+	h.Write(entropy)
+	h.Write(personalization)
+	K = h.Sum(K[:0])
+
+	// V = HMAC_K(V)
+	h = hmac.New(sha256.New, K)
+	h.Write(V)
+	V = h.Sum(V[:0])
+
+	firstLoop := true
+	return func(b []byte) error {
+		if firstLoop {
+			// K = HMAC_K(V || 0x01 || entropy || personalization)
+			h.Reset()
+			h.Write(V)
+			h.Write([]byte{0x01})
+			h.Write(entropy)
+			h.Write(personalization)
+			K = h.Sum(K[:0])
+
+			firstLoop = false
+		} else {
+			// K = HMAC_K(V || 0x00)
+			h.Reset()
+			h.Write(V)
+			h.Write([]byte{0x00})
+			K = h.Sum(K[:0])
+		}
+
+		// V = HMAC_K(V)
+		h = hmac.New(sha256.New, K)
+		h.Write(V)
+		V = h.Sum(V[:0])
+
+		tlen := 0
+		for tlen < len(b) {
+			// V = HMAC_K(V)
+			// T = T || V
+			h.Reset()
+			h.Write(V)
+			V = h.Sum(V[:0])
+			tlen += copy(b[tlen:], V)
+		}
+		return nil
+	}
+}
+
+// rightShift implements the right shift necessary for bits2int.
+func rightShift(b []byte, shift int) []byte {
+	if shift < 0 || shift >= 8 {
+		panic("ecdsa: internal error: tried to shift by more than 8 bits")
+	}
+	b = bytes.Clone(b)
+	for i := len(b) - 1; i >= 0; i-- {
+		b[i] >>= shift
+		if i > 0 {
+			b[i] |= b[i-1] << (8 - shift)
+		}
+	}
+	return b
+}
+
+// ECDSALegacy generates an ECDSA key deterministically from a random stream in
+// a way compatible with Go 1.19's ecdsa.GenerateKey.
+//
+// It uses the procedure given in FIPS 186-5, Appendix A.2.1.
 //
 // Note that ECDSALegacy may leak bits of the key through timing side-channels.
 func ECDSALegacy(c elliptic.Curve, rand io.Reader) (*ecdsa.PrivateKey, error) {
@@ -86,14 +205,14 @@ func ECDSALegacy(c elliptic.Curve, rand io.Reader) (*ecdsa.PrivateKey, error) {
 	}
 
 	one := big.NewInt(1)
-	k := new(big.Int).SetBytes(b)
+	x := new(big.Int).SetBytes(b)
 	n := new(big.Int).Sub(params.N, one)
-	k.Mod(k, n)
-	k.Add(k, one)
+	x.Mod(x, n)
+	x.Add(x, one)
 
 	priv := new(ecdsa.PrivateKey)
 	priv.PublicKey.Curve = c
-	priv.D = k
-	priv.PublicKey.X, priv.PublicKey.Y = c.ScalarBaseMult(k.Bytes())
+	priv.D = x
+	priv.PublicKey.X, priv.PublicKey.Y = c.ScalarBaseMult(x.Bytes())
 	return priv, nil
 }
