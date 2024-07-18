@@ -155,7 +155,10 @@ func testHMACDRBG(t *testing.T, c elliptic.Curve) {
 	}
 	ourDRBG := hmacDRBG(entropy, personalization)
 
-	N := bigmod.NewModulusFromBig(c.Params().N)
+	N, err := bigmod.NewModulusFromBig(c.Params().N)
+	if err != nil {
+		t.Fatal(err)
+	}
 	canonical := make([]byte, N.Size())
 	our := make([]byte, N.Size())
 
