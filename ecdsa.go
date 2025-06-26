@@ -1,3 +1,4 @@
+// Package keygen implements deterministic key generation algorithms.
 package keygen
 
 import (
@@ -13,10 +14,12 @@ import (
 	"filippo.io/bigmod"
 )
 
-// ECDSA generates an ECDSA key deterministically from a random secret.
+// ECDSA generates an ECDSA key deterministically from a random secret following
+// the [c2sp.org/det-keygen] specification.
 //
 // The secret must be at least 128 bits long and should be at least 192 bits
-// long for multi-user security. The secret should not be reused.
+// long for multi-user security. The secret should not be reused for other
+// purposes.
 //
 // This function instantiates HMAC_DRBG with SHA-256 according to NIST SP
 // 800-90A Rev. 1, and uses it for a procedure equivalent to that in FIPS 186-5,
@@ -28,6 +31,8 @@ import (
 // Section 5.6.1.2.
 //
 // The output MAY CHANGE until this package reaches v1.0.0.
+//
+// [c2sp.org/det-keygen]: https://c2sp.org/det-keygen
 func ECDSA(c elliptic.Curve, secret []byte) (*ecdsa.PrivateKey, error) {
 	if len(secret) < 16 {
 		return nil, fmt.Errorf("input secret must be at least 128 bits")
