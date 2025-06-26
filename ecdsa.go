@@ -35,6 +35,8 @@ func ECDSA(c elliptic.Curve, secret []byte) (*ecdsa.PrivateKey, error) {
 
 	var personalization string
 	switch c {
+	case elliptic.P224():
+		personalization = "det ECDSA key gen P-224"
 	case elliptic.P256():
 		personalization = "det ECDSA key gen P-256"
 	case elliptic.P384():

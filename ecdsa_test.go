@@ -30,6 +30,7 @@ func testAllCurves(t *testing.T, f func(*testing.T, elliptic.Curve)) {
 		name  string
 		curve elliptic.Curve
 	}{
+		{"P224", elliptic.P224()},
 		{"P256", elliptic.P256()},
 		{"P384", elliptic.P384()},
 		{"P521", elliptic.P521()},
@@ -62,13 +63,6 @@ func testECDSAEmptySecret(t *testing.T, c elliptic.Curve) {
 	_, err := ECDSA(c, nil)
 	if err == nil {
 		t.Error("expected error on empty secret")
-	}
-}
-
-func TestECDSAUnsupportedCurve(t *testing.T) {
-	_, err := ECDSA(elliptic.P224(), make([]byte, 16))
-	if err == nil {
-		t.Error("expected error on unsupported curve")
 	}
 }
 
