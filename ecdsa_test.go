@@ -1,3 +1,5 @@
+//go:build go1.22
+
 package keygen
 
 import (
@@ -7,7 +9,11 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha512"
+	"crypto/x509"
+	_ "embed"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -135,6 +141,46 @@ func TestECDSARejection(t *testing.T) {
 	}
 	if _, err := ecdsa.SignASN1(rand.Reader, k, make([]byte, 32)); err != nil {
 		t.Error(err)
+	}
+}
+
+//go:embed testdata/ecdsa.json
+var ecdsaVectors []byte
+
+func TestECDSAVectors(t *testing.T) {
+	var vectors []struct {
+		Curve string `json:"curve"`
+		Seed  []byte `json:"seed"`
+		PKCS8 []byte `json:"private_key_pkcs8"`
+	}
+	if err := json.Unmarshal(ecdsaVectors, &vectors); err != nil {
+		t.Fatal(err)
+	}
+	curves := map[string]elliptic.Curve{
+		"secp224r1": elliptic.P224(),
+		"secp256r1": elliptic.P256(),
+		"secp384r1": elliptic.P384(),
+		"secp521r1": elliptic.P521(),
+	}
+	for _, v := range vectors {
+		t.Run(fmt.Sprintf("%s-%s", v.Curve, hex.EncodeToString(v.Seed)), func(t *testing.T) {
+			t.Parallel()
+			c, ok := curves[v.Curve]
+			if !ok {
+				t.Fatalf("unknown curve %s", v.Curve)
+			}
+			k, err := ECDSA(c, v.Seed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			exp, err := x509.ParsePKCS8PrivateKey(v.PKCS8)
+			if err != nil {
+				t.Fatalf("failed to parse expected PKCS8: %v", err)
+			}
+			if !k.Equal(exp) {
+				t.Errorf("ECDSA key does not match")
+			}
+		})
 	}
 }
 
