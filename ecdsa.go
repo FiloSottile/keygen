@@ -98,11 +98,7 @@ func ECDSA(c elliptic.Curve, secret []byte) (*ecdsa.PrivateKey, error) {
 		}
 	}
 
-	priv := new(ecdsa.PrivateKey)
-	priv.PublicKey.Curve = c
-	priv.D = new(big.Int).SetBytes(x.Bytes(N))
-	priv.PublicKey.X, priv.PublicKey.Y = c.ScalarBaseMult(x.Bytes(N))
-	return priv, nil
+	return privateKey(c, x.Bytes(N))
 }
 
 // testingOnlyRejectionSamplingLooped is called when rejection sampling in
