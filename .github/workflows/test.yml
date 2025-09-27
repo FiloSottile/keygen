@@ -11,34 +11,43 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         go:
           - { go-version: stable }
           - { go-version: oldstable }
           - { go-version-file: go.mod }
         deps:
-          - { name: locked }
-          - { name: latest, update: yes }
+          - locked
+          - latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
-          go-version: ${{ matrix.go.go-version || null }}
-          go-version-file: ${{ matrix.go.go-version-file || null }}
+          go-version: ${{ matrix.go.go-version }}
+          go-version-file: ${{ matrix.go.go-version-file }}
       - run: go get -u
-        if: matrix.deps.update
+        if: matrix.deps == 'latest'
       - run: go test ./...
   staticcheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
-        with: { go-version: stable }
+        with:
+          go-version: stable
       - run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
   govulncheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
-        with: { go-version: stable }
+        with:
+          go-version: stable
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
