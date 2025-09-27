@@ -54,7 +54,7 @@ func ECDSA(c elliptic.Curve, secret []byte) (*ecdsa.PrivateKey, error) {
 
 	drbg := hmacDRBG(secret, []byte(personalization))
 
-	N, err := bigmod.NewModulusFromBig(c.Params().N)
+	N, err := bigmod.NewModulus(c.Params().N.Bytes())
 	if err != nil {
 		return nil, fmt.Errorf("internal error: %v", err)
 	}

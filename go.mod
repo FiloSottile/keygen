@@ -1,13 +1,13 @@
 module filippo.io/keygen
 
-go 1.20
+go 1.24.0
 
 require (
-	filippo.io/bigmod v0.0.3
+	filippo.io/bigmod v0.1.0
 	golang.org/x/crypto v0.7.0
 )
 
-require golang.org/x/sys v0.22.0 // indirect
+require golang.org/x/sys v0.36.0 // indirect
 
 // Testing dependencies.
 require (
