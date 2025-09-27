@@ -1,14 +1,44 @@
 name: Go tests
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  schedule: # daily at 09:42 UTC
+    - cron: '42 9 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   test:
-    name: Go ${{ matrix.go }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: [ '1.20', '1.x' ]
+        go:
+          - { go-version: stable }
+          - { go-version: oldstable }
+          - { go-version-file: go.mod }
+        deps:
+          - { name: locked }
+          - { name: latest, update: yes }
     steps:
-      - uses: actions/setup-go@v2
-        with: { go-version: "${{ matrix.go }}" }
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go.go-version || null }}
+          go-version-file: ${{ matrix.go.go-version-file || null }}
+      - run: go get -u
+        if: matrix.deps.update
       - run: go test ./...
+  staticcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with: { go-version: stable }
+      - run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with: { go-version: stable }
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
