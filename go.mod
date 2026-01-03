@@ -3,7 +3,7 @@ module filippo.io/keygen
 go 1.24.0
 
 require (
-	filippo.io/bigmod v0.1.0
+	filippo.io/bigmod v0.1.1-0.20260103110540-f8a47775ebe5
 	golang.org/x/crypto v0.7.0
 )
 

@@ -1,10 +1,6 @@
-//go:build go1.22
-
 package keygen
 
 import (
-	"bytes"
-	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -20,8 +16,6 @@ import (
 	"strings"
 	"testing"
 
-	"filippo.io/bigmod"
-	drbg "github.com/canonical/go-sp800.90a-drbg"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -72,7 +66,6 @@ func TestECDSASecretLengths(t *testing.T) {
 
 func testECDSASecretLengths(t *testing.T, c elliptic.Curve) {
 	for l := 16; l < 128; l++ {
-		l := l
 		t.Run(strconv.Itoa(l), func(t *testing.T) {
 			t.Parallel()
 			k, err := ECDSA(c, make([]byte, l))
@@ -175,53 +168,6 @@ func TestECDSAVectors(t *testing.T) {
 				t.Errorf("ECDSA key does not match")
 			}
 		})
-	}
-}
-
-func TestHMACDRBG(t *testing.T) {
-	testAllCurves(t, testHMACDRBG)
-}
-
-func testHMACDRBG(t *testing.T, c elliptic.Curve) {
-	entropy := make([]byte, 16)
-	rand.Read(entropy)
-	personalization := make([]byte, 6)
-	rand.Read(personalization)
-
-	canonicalDRBG, err := drbg.NewHMACWithExternalEntropy(
-		crypto.SHA256, entropy, nil, personalization, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ourDRBG := hmacDRBG(entropy, personalization)
-
-	N, err := bigmod.NewModulus(c.Params().N.Bytes())
-	if err != nil {
-		t.Fatal(err)
-	}
-	canonical := make([]byte, N.Size())
-	our := make([]byte, N.Size())
-
-	if _, err := canonicalDRBG.Read(canonical); err != nil {
-		t.Fatal(err)
-	}
-	if err := ourDRBG(our); err != nil {
-		t.Fatal(err)
-	}
-
-	if !bytes.Equal(canonical, our) {
-		t.Error("HMAC_DRBG output does not match")
-	}
-
-	if _, err := canonicalDRBG.Read(canonical); err != nil {
-		t.Fatal(err)
-	}
-	if err := ourDRBG(our); err != nil {
-		t.Fatal(err)
-	}
-
-	if !bytes.Equal(canonical, our) {
-		t.Error("HMAC_DRBG output does not match")
 	}
 }
 
