@@ -62,13 +62,13 @@ func BruteforceRSACheapSeed(bits int, size int) {
 		}
 	}
 
-	var gcdBitLen31, gcdBitLen32 bool
+	var gcdBitLen32, gcdBitLenGt32 bool
 	testingOnlyGCDBitLen = func(bitLen int) {
-		if bitLen == 31 {
-			gcdBitLen31 = true
-		}
-		if bitLen >= 32 {
+		if bitLen == 32 {
 			gcdBitLen32 = true
+		}
+		if bitLen > 32 {
+			gcdBitLenGt32 = true
 		}
 	}
 
@@ -105,7 +105,7 @@ func BruteforceRSACheapSeed(bits int, size int) {
 	for {
 		rejectedCandidates = 0
 		zeroRejections = false
-		gcdBitLen31, gcdBitLen32 = false, false
+		gcdBitLen32, gcdBitLenGt32 = false, false
 		cofactorP, cofactorQ, cofactorTwice = false, false, false
 
 		k, err := RSA(bits, seed)
@@ -117,13 +117,13 @@ func BruteforceRSACheapSeed(bits int, size int) {
 			minRejections = rejectedCandidates
 			fmt.Printf("bits=%d seed=%x rejections=%d zero=%v\n", bits, seed, rejectedCandidates, zeroRejections)
 		}
-		if gcdBitLen31 {
-			fmt.Printf("bits=%d seed=%x GCD BITLEN 31\n", bits, seed)
-			reportFound("FOUND RSA seed=%x bits=%d GCD BITLEN 31", seed, bits)
-		}
 		if gcdBitLen32 {
 			fmt.Printf("bits=%d seed=%x GCD BITLEN 32\n", bits, seed)
 			reportFound("FOUND RSA seed=%x bits=%d GCD BITLEN 32", seed, bits)
+		}
+		if gcdBitLenGt32 {
+			fmt.Printf("bits=%d seed=%x GCD BITLEN > 32\n", bits, seed)
+			reportFound("FOUND RSA seed=%x bits=%d GCD BITLEN > 32", seed, bits)
 		}
 		if bits == 2048+16 && k.D.BitLen() < 2048 {
 			fmt.Printf("bits=%d seed=%x len(d)=%d\n", bits, seed, k.D.BitLen())
