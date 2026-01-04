@@ -104,6 +104,9 @@ func RSA(bits int, secret []byte) (*rsa.PrivateKey, error) {
 			// We waste a prime by retrying the whole process, since 65537 is
 			// probably only a factor of one of p-1 or q-1, but the probability
 			// of this check failing is ≈ 2⁻¹⁵, so it doesn't matter.
+			if testingOnlyNoInverse != nil {
+				testingOnlyNoInverse(P, Q)
+			}
 			continue
 		}
 
@@ -133,6 +136,8 @@ func RSA(bits int, secret []byte) (*rsa.PrivateKey, error) {
 	}
 }
 
+var testingOnlyNoInverse func(P, Q *bigmod.Modulus)
+
 func newPrivateKey(N *bigmod.Modulus, e uint, d *bigmod.Nat, P, Q *bigmod.Modulus) (*rsa.PrivateKey, error) {
 	priv := &rsa.PrivateKey{
 		PublicKey: rsa.PublicKey{
@@ -151,6 +156,8 @@ func newPrivateKey(N *bigmod.Modulus, e uint, d *bigmod.Nat, P, Q *bigmod.Modulu
 	}
 	return priv, nil
 }
+
+var testingOnlyGCDBitLen func(int)
 
 // errDivisorTooLarge is returned by [totient] when gcd(p-1, q-1) is too large.
 var errDivisorTooLarge = errors.New("divisor too large")
@@ -182,7 +189,11 @@ func totient(p, q *bigmod.Modulus) (*bigmod.Modulus, error) {
 	// edge cases is impractical, and we'd rather not behave differently on
 	// different platforms, so we reject divisors above 2³²-1. Note that we also
 	// add back the factor of 2 we shifted out above.
-	if gcd.BitLenVarTime()+1 > 32 {
+	gcdBitLen := gcd.BitLenVarTime() + 1
+	if testingOnlyGCDBitLen != nil {
+		testingOnlyGCDBitLen(gcdBitLen)
+	}
+	if gcdBitLen > 32 {
 		return nil, errDivisorTooLarge
 	}
 	if gcd.IsZero() == 1 || gcd.Bits()[0] == 0 {
@@ -195,9 +206,12 @@ func totient(p, q *bigmod.Modulus) (*bigmod.Modulus, error) {
 	return bigmod.NewModulusProduct(a.Bytes(p), b.Bytes(q))
 }
 
+var testingOnlyRejectedCandidates func(int)
+
 // randomPrime returns a random prime number of the given bit size following
 // the process in FIPS 186-5, Appendix A.1.3.
 func randomPrime(drbg func([]byte) error, bits int) ([]byte, error) {
+	var rejectedCandidates int
 	b := make([]byte, (bits+7)/8)
 	for {
 		if err := drbg(b); err != nil {
@@ -242,8 +256,12 @@ func randomPrime(drbg func([]byte) error, bits int) ([]byte, error) {
 		// generation and return an error if it fails. See [checkPrivateKey].
 
 		if isPrime(b) {
+			if testingOnlyRejectedCandidates != nil {
+				testingOnlyRejectedCandidates(rejectedCandidates)
+			}
 			return b, nil
 		}
+		rejectedCandidates++
 	}
 }
 
