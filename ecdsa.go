@@ -28,8 +28,6 @@ import (
 // three curves, as per SP 800-90Ar1, Section 10.1 and SP 800-57 Part 1 Rev. 5,
 // Section 5.6.1.2.
 //
-// The output MAY CHANGE until this package reaches v1.0.0.
-//
 // [c2sp.org/det-keygen]: https://c2sp.org/det-keygen
 func ECDSA(c elliptic.Curve, secret []byte) (*ecdsa.PrivateKey, error) {
 	if len(secret) < 16 {
