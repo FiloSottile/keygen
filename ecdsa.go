@@ -146,9 +146,5 @@ func ECDSALegacy(c elliptic.Curve, rand io.Reader) (*ecdsa.PrivateKey, error) {
 	x.Mod(x, n)
 	x.Add(x, one)
 
-	priv := new(ecdsa.PrivateKey)
-	priv.PublicKey.Curve = c
-	priv.D = x
-	priv.PublicKey.X, priv.PublicKey.Y = c.ScalarBaseMult(x.Bytes())
-	return priv, nil
+	return privateKey(c, x.FillBytes(make([]byte, (params.N.BitLen()+7)/8)))
 }
