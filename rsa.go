@@ -330,6 +330,7 @@ func isPrime(w []byte) bool {
 			// b was rejected.
 			continue
 		}
+		//lint:ignore S1002 the named constant is clearer than !result
 		if result == millerRabinCOMPOSITE {
 			return false
 		}
